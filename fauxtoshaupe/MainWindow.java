@@ -8,7 +8,7 @@ import java.awt.image.BufferedImage;
 import java.util.*;
 
 public class MainWindow extends JFrame implements ActionListener, MouseListener, MouseMotionListener,
-        KeyListener, Runnable {
+        KeyListener, MouseWheelListener, Runnable {
 
     /// Constructor
 
@@ -22,7 +22,9 @@ public class MainWindow extends JFrame implements ActionListener, MouseListener,
         createMenu();
         createCanvas();
         createShortcuts();
+
         addKeyListener(this);
+
         Thread t = new Thread(this);
         t.start();
 
@@ -37,17 +39,6 @@ public class MainWindow extends JFrame implements ActionListener, MouseListener,
     private void display(){
         pack();
         setVisible(true); // shows window
-    }
-
-    /**
-     * New setSize method, requires int width and height instead of
-     * Dimension object.
-     *
-     * @param width int
-     * @param height int
-     */
-    private void nwSetSize(int width, int height){
-        setSize(new Dimension(width, height)); // Sizes the frame
     }
 
     /**
@@ -133,6 +124,7 @@ public class MainWindow extends JFrame implements ActionListener, MouseListener,
         _canvas.setBackground(new Color(50,50,50));
         _scrollpane.addMouseListener(this);
         _scrollpane.addMouseMotionListener(this);
+        _scrollpane.addMouseWheelListener(this);
 
         setLayout(new BorderLayout());
         add(_scrollpane, BorderLayout.CENTER);
@@ -142,14 +134,13 @@ public class MainWindow extends JFrame implements ActionListener, MouseListener,
      * Initiates shortcuts for commands
      */
     private void createShortcuts(){
-        _shortcuts = new HashMap<Integer[], String>();
-        _shortcuts.put(new Integer[]{62}, "View:Center");
-        _shortcuts.put(new Integer[]{17, 62}, "View:Cente");
 
         _keyspressed = new Vector<>(0);
 
         comparator = new ComparatorInteger();
     }
+
+    // Image display management
 
     /**
      * Displays the image in the work frame.
@@ -159,28 +150,47 @@ public class MainWindow extends JFrame implements ActionListener, MouseListener,
     private void displayImage(BufferedImage image){
 
         _canvasPicture = image;
+        _pictureWidth = _canvasPicture.getWidth();
+        _pictureHeight = _canvasPicture.getHeight();
+
+        // Picture is displayed with its normal size
+        _pictureVisibleWidth = _pictureWidth;
+        _pictureVisibleHeight = _pictureHeight;
+
         boolean resized = false;
 
-        if (image.getWidth() > _canvas.getWidth() && image.getHeight() > _canvas.getHeight()) {
-            _canvas.setPreferredSize(new Dimension(image.getWidth(), image.getHeight()));
+        // If canvas too small
+        if (_pictureWidth > _canvas.getWidth() && _pictureHeight > _canvas.getHeight()) {
+            _canvas.setPreferredSize(new Dimension(_pictureWidth, _pictureHeight));
             resized = true;
         }
-        else if (image.getWidth() > _canvas.getWidth()) {
-            _canvas.setPreferredSize(new Dimension(image.getWidth(), _canvas.getHeight()));
+        // If not enough large
+        else if (_pictureWidth > _canvas.getWidth()) {
+            _canvas.setPreferredSize(new Dimension(_pictureWidth, _canvas.getHeight()));
             resized = true;
         }
-        else if (image.getHeight() > _canvas.getHeight()) {
-            _canvas.setPreferredSize(new Dimension(_canvas.getWidth(), image.getHeight()));
+        // If not enough tall
+        else if (_pictureHeight > _canvas.getHeight()) {
+            _canvas.setPreferredSize(new Dimension(_canvas.getWidth(), _pictureHeight));
             resized = true;
         }
+        // If canvas is too small on any part, resize canvas to image size
         if (resized)
             pack();
+
 
         centerCanvasPosition();
         _canvas.repaint();
     }
 
+    /**
+     * Set x and y canvas picture's anchor so that
+     * the picture's central pixel is the canvas' central pixel.
+     */
     private void centerCanvasPosition(){
+
+        System.out.println("Center");
+
         int halfW = 0, halfH = 0;
         if (_canvasPicture != null){
             halfW = _canvasPicture.getWidth() / 2;
@@ -193,6 +203,30 @@ public class MainWindow extends JFrame implements ActionListener, MouseListener,
         _yCanvas = _canvas.getHeight() / 2 - halfH;
     }
 
+    /**
+     * Zooms or dezooms picture on canvas depending on
+     * the sign given in parameter. Negative sign gives zoom
+     * and Positive sign gives dezoom.
+     *
+     * @param sign int
+     */
+    private void zoom(int sign){
+
+        if (sign < 0) sign = 1;
+        else          sign = -1;
+
+        _pictureVisibleWidth += sign*(_pictureVisibleWidth/10 + 1);
+        _pictureVisibleHeight += sign*(_pictureVisibleHeight/10 + 1);
+
+        BufferedImage zoomed = new BufferedImage(_pictureVisibleWidth, _pictureVisibleHeight, Transparency.OPAQUE);
+        Graphics2D g = zoomed.createGraphics();
+        g.drawImage(_canvasPicture, 0, 0, _pictureVisibleWidth, _pictureVisibleHeight, null);
+        g.dispose();
+
+        _canvasPicture = zoomed;
+        _canvas.repaint();
+    }
+
     // Button push management
 
     @Override
@@ -201,6 +235,7 @@ public class MainWindow extends JFrame implements ActionListener, MouseListener,
         String cmd = e.getActionCommand();
 
         if (cmd.equals("App:Exit")){
+            stop(); // thread for shortcut
             dispose();
         }
         else if (cmd.equals("File:Open")){
@@ -217,6 +252,7 @@ public class MainWindow extends JFrame implements ActionListener, MouseListener,
             _canvas.repaint();
         }
         else {
+            _keyspressed.clear();
             InformationWindow.showError("Error on command",
                     "A command has been passed to actionPerformed but doesn't exist : "
                             + e.getActionCommand(), this);
@@ -231,6 +267,7 @@ public class MainWindow extends JFrame implements ActionListener, MouseListener,
     public void actionPerformed(String cmd){
 
         if (cmd.equals("App:Exit")){
+            stop(); // thread for shortcut
             dispose();
         }
         else if (cmd.equals("File:Open")){
@@ -247,6 +284,7 @@ public class MainWindow extends JFrame implements ActionListener, MouseListener,
             _canvas.repaint();
         }
         else {
+            _keyspressed.clear();
             InformationWindow.showError("Error on command",
                     "A command has been passed to actionPerformed but doesn't exist : "
                             + cmd, this);
@@ -293,6 +331,7 @@ public class MainWindow extends JFrame implements ActionListener, MouseListener,
 
         // If file selection has succeeded, opens the file
         if (image != null){
+            _originalPicture = image;
             displayImage(image);
         }
     }
@@ -310,7 +349,7 @@ public class MainWindow extends JFrame implements ActionListener, MouseListener,
 
     @Override
     public void mouseClicked(MouseEvent me){
-
+        System.out.println(me.getButton());
     }
 
     @Override
@@ -325,8 +364,11 @@ public class MainWindow extends JFrame implements ActionListener, MouseListener,
 
     @Override
     public void mousePressed(MouseEvent me){
-        _oldXDragging = me.getX();
-        _oldYDragging = me.getY();
+        // Left click
+        if(me.getButton() == 1) {
+            _oldXDragging = me.getX();
+            _oldYDragging = me.getY();
+        }
     }
 
     @Override
@@ -337,6 +379,7 @@ public class MainWindow extends JFrame implements ActionListener, MouseListener,
     @Override
     public void mouseDragged(MouseEvent me){
 
+        // Left click
         _xCanvas += me.getX() - _oldXDragging;
         _yCanvas += me.getY() - _oldYDragging;
 
@@ -351,11 +394,21 @@ public class MainWindow extends JFrame implements ActionListener, MouseListener,
 
     }
 
+    @Override
+    public void mouseWheelMoved(MouseWheelEvent me){
+        // If user press Ctrl
+        if (_canvasPicture != null && equal(_keyspressed, new Integer[]{17})){
+            zoom(me.getWheelRotation());
+        } else {
+            System.out.println("nope");
+        }
+    }
+
     // Key management
 
     @Override
     public void keyPressed(KeyEvent e){
-        if (!_keyspressed.contains(e.getExtendedKeyCode())) {
+        if (!in(_keyspressed, e.getExtendedKeyCode())) {
             _keyspressed.add(e.getExtendedKeyCode());
             _keyspressed.sort(comparator);
         }
@@ -364,9 +417,11 @@ public class MainWindow extends JFrame implements ActionListener, MouseListener,
     @Override
     public void keyReleased(KeyEvent e){
 
-        if (_keyspressed.contains(e.getExtendedKeyCode())) {
+        if (in(_keyspressed, e.getExtendedKeyCode())) {
             _keyspressed.remove(_keyspressed.indexOf(e.getExtendedKeyCode()));
             _keyspressed.sort(comparator);
+        } else {
+            System.out.println("false");
         }
 
     }
@@ -377,37 +432,65 @@ public class MainWindow extends JFrame implements ActionListener, MouseListener,
     }
 
     public void updateKeyCommand(){
-        int[] keys = toArray(_keyspressed);
-        for(int i: keys)
-            System.out.println(i);
-        Set<Integer[]> keys2 = _shortcuts.keySet();
-        for(Integer[] i: keys2){
-            for(int j: i){
-                System.out.println(j);
-            }
-            System.out.println();
-        }
-        String cmd = _shortcuts.get(keys);
+
+        // Gets command value for key shortcut
+        Integer[] keys = new Integer[_keyspressed.size()];
+        for(int i = 0; i < _keyspressed.size(); i++) keys[i] = _keyspressed.get(i);
+
+        String cmd = getShortcut(keys);
+
+        // If shortcut exists, executes command. Else, do nothing
         if (cmd != null)
             actionPerformed(cmd);
     }
 
     // Other
 
-    private boolean in(Vector<Integer> v, int i){
-        for (int j: v){
-            if (i == j)
+    private boolean in(Integer[] i, Integer value){
+        for(Integer k: i)
+            if (k == value)
                 return true;
-        }
         return false;
     }
 
-    private int[] toArray(Vector<Integer> v){
-        int[] a = new int[v.size()];
-        for(int i = 0; i < v.size(); i++){
-            a[i] = v.get(i);
+    private boolean in(Vector<Integer> v, Integer value){
+        for(Integer k: v)
+            if (k == value)
+                return true;
+        return false;
+    }
+
+    private String getShortcut(Integer[] keys){
+
+        // Enter shortcuts HERE
+
+        if (equal(keys, new Integer[]{67})){
+            return "View:Center";
         }
-        return a;
+
+        ///////////////////////
+
+        return null;
+    }
+
+    private boolean equal(Integer[] i, Integer[] j) {
+        if (i.length != j.length)
+            return false;
+        for (int k = 0; k < i.length; k++) {
+            if (i[k] != j[k])
+                return false;
+        }
+        return true;
+    }
+
+    private boolean equal(Vector<Integer> v, Integer[] j) {
+        if (v.size() != j.length)
+            return false;
+        for (int k = 0; k < v.size(); k++) {
+            if (v.get(k) != j[k])
+                return false;
+        }
+        return true;
     }
 
     // Runnable
@@ -418,7 +501,7 @@ public class MainWindow extends JFrame implements ActionListener, MouseListener,
         while(!_stopRun) {
             updateKeyCommand();
             try {
-                Thread.sleep(500);
+                Thread.sleep(30);
             } catch (Exception e){
                 InformationWindow.showError("Error", e.getMessage(), this);
             }
@@ -438,15 +521,14 @@ public class MainWindow extends JFrame implements ActionListener, MouseListener,
 
     private JPanel _canvas;
     private JScrollPane _scrollpane;
-    private BufferedImage _canvasPicture;
+    private BufferedImage _canvasPicture, _originalPicture;
     private int _xCanvas, _yCanvas; // coordinates of TopLeft user canvas position
+    private int _pictureWidth, _pictureHeight, _pictureVisibleWidth, _pictureVisibleHeight;
 
     private int _oldXDragging, _oldYDragging;
 
-    private Map<Integer[], String> _shortcuts;
     private Vector<Integer> _keyspressed;
     private ComparatorInteger comparator;
-    private boolean _isAccessing;
 
     // thread
     private boolean _stopRun;

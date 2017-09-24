@@ -2,11 +2,10 @@ package fauxtoshaupe;
 
 import javax.swing.*;
 
-public class InformationWindow {
+public class InformationWindow extends JOptionPane{
 
-    public static void showError(String title, String message, JFrame parent){
-        JOptionPane opt = new JOptionPane(message);
-        opt.showMessageDialog(parent, opt.getMessage(), title,
+    public static void showError(String title, String message, MainWindow parent){
+        showMessageDialog(parent, message, title,
                 JOptionPane.WARNING_MESSAGE);
     }
 
